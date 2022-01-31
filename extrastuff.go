@@ -2,17 +2,19 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"time"
 )
 
-func get_server_id(host string, token string) int {
+func get_server_id(host string, token string) (int, error) {
 	c := http.Client{Timeout: time.Duration(60) * time.Second}
-	req, err := http.NewRequest("GET", "https://api.ews.eos.lcl/api/v1/server?name="+host, nil)
+	req, err := http.NewRequest("GET", "https://Xapi.ews.eos.lcl/api/v1/server?name="+host, nil)
 	if err != nil {
-		log.Fatal("Error quering server endpoint: ", err)
+		return 0, fmt.Errorf("Error1: %v", err)
+		// log.Fatal("Error quering server endpoint: ", err)
 	}
 	req.Header.Add("X-Token", token)
 
@@ -34,10 +36,11 @@ func get_server_id(host string, token string) int {
 	}
 
 	var s []Server
-	if err := json.Unmarshal(body, &s); err != nil {
+	err = json.Unmarshal(body, &s)
+	if err != nil {
 		log.Fatal("Decoding json: ", err, body)
 	}
 
 	// assume only 1 element in array
-	return s[0].Id
+	return s[0].Id, nil
 }

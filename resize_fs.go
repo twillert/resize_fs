@@ -104,7 +104,11 @@ func main() {
 
 	get_args()
 
-	id := get_server_id(*HostPtr, token)
+	id, err := get_server_id(*HostPtr, token)
+	if err != nil {
+		log.Fatalf("blah blah %v", err)
+	}
+	fmt.Println("bin hier...")
 	fmt.Println(id)
 	os.Exit(99)
 
