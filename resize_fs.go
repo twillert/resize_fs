@@ -14,6 +14,7 @@ import (
 
 var HostPtr, PortPtr, FilesystemPtr *string
 var SizePtr *int
+var DryRunPtr *bool
 
 func remote_exec(c *ssh.Client, cmd string) (bool, string) {
 	// fmt.Println("inside create_session")
@@ -35,6 +36,7 @@ func get_args() {
 	PortPtr = flag.String("port", "22", "remote port of sshd")
 	FilesystemPtr = flag.String("filesystem", "", "The remote filesystem to be resized")
 	SizePtr = flag.Int("size", 0, "New target size in Gb for remote filesystem")
+	DryRunPtr = flag.Bool("dry-run", false, "Dry-Run, do not increase filesystem")
 	flag.Parse()
 	if *HostPtr == "" {
 		log.Fatal("host parameter can not be empty")
@@ -63,7 +65,7 @@ func get_single_new_device(a1, a2 []string) (newdevice string) {
 		m[value]++
 	}
 	found := false
-	for index, _ := range m {
+	for index := range m {
 		if m[index] == 1 {
 			newdevice = index
 			found = true
@@ -85,6 +87,7 @@ func get_vg_and_lv(dev_mapper_device string) (vg, lv string) {
 }
 
 func main() {
+
 	var user string = os.Getenv("USER")
 	var pw string = os.Getenv("pw")
 	var token string = os.Getenv("token")
@@ -100,6 +103,10 @@ func main() {
 	}
 
 	get_args()
+
+	id := get_server_id(*HostPtr, token)
+	fmt.Println(id)
+	os.Exit(99)
 
 	config := &ssh.ClientConfig{
 		User: user,
@@ -168,6 +175,10 @@ func main() {
 	pre := strings.Fields(get_scsi_devices(client))
 	fmt.Println("pre: ", pre)
 
+	if *DryRunPtr {
+		fmt.Print("Dry-Run detected. Exiting before making changes to remote server")
+		os.Exit(0)
+	}
 	// add disk
 	cmdtext = "curl -X POST -H 'Content-Type: application/json' --silent -H 'X-Token: " + token + "' https://api.ews.eos.lcl/api/v1/server/" + serverid + "/disk -d '{ \"disks\": [ { \"disksize\": " + strconv.Itoa(size_needed) + " } ] }'"
 	o, err = exec.Command("bash", "-c", cmdtext).Output()
@@ -194,4 +205,3 @@ func main() {
 		}
 	}
 }
-
