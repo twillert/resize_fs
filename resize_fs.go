@@ -1,11 +1,9 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -28,18 +26,6 @@ func remote_exec(c *ssh.Client, cmd string) (bool, string) {
 		return false, string(out)
 	} else {
 		return true, string(out)
-	}
-}
-
-func get_args() {
-	HostPtr = flag.String("host", "", "remote host to connect to")
-	PortPtr = flag.String("port", "22", "remote port of sshd")
-	FilesystemPtr = flag.String("filesystem", "", "The remote filesystem to be resized")
-	SizePtr = flag.Int("size", 0, "New target size in Gb for remote filesystem")
-	DryRunPtr = flag.Bool("dry-run", false, "Dry-Run, do not increase filesystem")
-	flag.Parse()
-	if *HostPtr == "" {
-		log.Fatal("host parameter can not be empty")
 	}
 }
 
@@ -91,7 +77,6 @@ func main() {
 	var user string = os.Getenv("USER")
 	var pw string = os.Getenv("pw")
 	var token string = os.Getenv("token")
-
 	if user == "" {
 		log.Fatal("'USER' environment variable not set")
 	}
@@ -103,14 +88,6 @@ func main() {
 	}
 
 	get_args()
-
-	id, err := get_server_id(*HostPtr, token)
-	if err != nil {
-		log.Fatalf("blah blah %v", err)
-	}
-	fmt.Println("bin hier...")
-	fmt.Println(id)
-	os.Exit(99)
 
 	config := &ssh.ClientConfig{
 		User: user,
@@ -166,14 +143,8 @@ func main() {
 	}
 	fmt.Println("sizes: ", size, size_curr, size_needed)
 
-	// get server id
-	var cmdtext string = "curl -X GET  -H 'Content-Type: application/json' --silent -H 'X-Token: " + token + "' https://api.ews.eos.lcl/api/v1/server | jq -r '.[] | select(.name==\"" + *HostPtr + "\") | .id'"
-	o, err := exec.Command("bash", "-c", cmdtext).Output()
-	if err != nil {
-		log.Fatal(err)
-	}
-	var serverid string = strings.TrimSuffix(string(o), "\n")
-	fmt.Printf("The server id is %s\n", serverid)
+	serverid, err := get_server_id(*HostPtr, token)
+	fmt.Printf("The server id is %v\n", serverid)
 
 	// get PRE scsi devices
 	pre := strings.Fields(get_scsi_devices(client))
@@ -184,8 +155,8 @@ func main() {
 		os.Exit(0)
 	}
 	// add disk
-	cmdtext = "curl -X POST -H 'Content-Type: application/json' --silent -H 'X-Token: " + token + "' https://api.ews.eos.lcl/api/v1/server/" + serverid + "/disk -d '{ \"disks\": [ { \"disksize\": " + strconv.Itoa(size_needed) + " } ] }'"
-	o, err = exec.Command("bash", "-c", cmdtext).Output()
+	fmt.Println("Adding new disk")
+	err = add_disk(serverid, size_needed, token)
 	if err != nil {
 		log.Fatal(err)
 	}
