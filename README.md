@@ -1,5 +1,7 @@
 # resize_fs
-resize remote filesystem
+Resize filesystem on remote Linux server.
+Using a hollistic approach this tool will enable to increase the size of filesystems on remote Linux server. Requires privilegde SSH access and remote LVM based filesystems.
+
 
 # Todo
 
