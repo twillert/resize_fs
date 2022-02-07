@@ -11,6 +11,7 @@ func get_args() {
 	FilesystemPtr = flag.String("filesystem", "", "The remote filesystem to be resized")
 	SizePtr = flag.Int("size", 0, "New target size in Gb for remote filesystem")
 	DryRunPtr = flag.Bool("dry-run", false, "Dry-Run, do not increase filesystem")
+	UserPtr = flag.String("user", "root", "remote user to connect with SSH and execute commands")
 	flag.Parse()
 	if *HostPtr == "" {
 		log.Fatal("host parameter can not be empty")

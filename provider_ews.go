@@ -59,7 +59,6 @@ func add_disk(serverid int, disksize int, token string) (err error) {
 
 	url := "https://api.ews.eos.lcl/api/v1/server/" + strconv.Itoa(serverid) + "/disk"
 	var postbody = []byte(`{ "disks": [ { "disksize": ` + strconv.Itoa(disksize) + `} ] }`)
-	// var cmdtext string = "curl -X POST -H 'Content-Type: application/json' --silent -H 'X-Token: " + token + "' https://api.ews.eos.lcl/api/v1/server/" + serverid + "/disk -d '{ \"disks\": [ { \"disksize\": " + strconv.Itoa(size_needed) + " } ] }'"
 	c := http.Client{Timeout: time.Duration(60) * time.Second}
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(postbody))
 	if err != nil {
@@ -76,4 +75,13 @@ func add_disk(serverid int, disksize int, token string) (err error) {
 	defer resp.Body.Close()
 	return
 
+}
+
+func ews_add_disk(host, token string, disksize int) (err error) {
+	serverid, err := get_server_id(host, token)
+	if err != nil {
+		return
+	}
+	err = add_disk(serverid, disksize, token)
+	return
 }

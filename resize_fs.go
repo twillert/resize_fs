@@ -10,28 +10,37 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-var HostPtr, PortPtr, FilesystemPtr *string
+var HostPtr, PortPtr, FilesystemPtr, UserPtr *string
 var SizePtr *int
 var DryRunPtr *bool
 
-func remote_exec(c *ssh.Client, cmd string) (bool, string) {
-	// fmt.Println("inside create_session")
+var bin = map[string]string{
+	"df":       "/usr/bin/df",
+	"grep":     "/usr/bin/grep",
+	"lvresize": "/usr/sbin/lvresize",
+	"lsscsi":   "/usr/bin/lsscsi",
+	"lvs":      "/usr/sbin/lvs",
+	"pvcreate": "/usr/sbin/pvcreate",
+	"pvs":      "/usr/sbin/pvs",
+	"tail":     "/usr/bin/tail",
+	"vgextend": "/usr/sbin/vgextend",
+}
+
+func remote_exec(c *ssh.Client, cmd string) (out string, err error) {
 	s, err := c.NewSession()
 	if err != nil {
 		log.Fatal("Failed to create session: ", err)
 	}
 	defer s.Close()
 
-	if out, err := s.CombinedOutput(cmd); err != nil {
-		return false, string(out)
-	} else {
-		return true, string(out)
-	}
+	outbyte, err := s.CombinedOutput(cmd)
+	out = string(outbyte)
+	return
 }
 
 func get_scsi_devices(c *ssh.Client) string {
-	res, output := remote_exec(c, "/usr/bin/lsscsi | grep -E -o '/dev/[[:alnum:]]+'")
-	if !res {
+	output, err := remote_exec(c, "/usr/bin/lsscsi | grep -E -o '/dev/[[:alnum:]]+'")
+	if err != nil {
 		log.Fatal("Could not get scsi devices: " + output)
 	}
 	return output
@@ -74,12 +83,8 @@ func get_vg_and_lv(dev_mapper_device string) (vg, lv string) {
 
 func main() {
 
-	var user string = os.Getenv("USER")
 	var pw string = os.Getenv("pw")
 	var token string = os.Getenv("token")
-	if user == "" {
-		log.Fatal("'USER' environment variable not set")
-	}
 	if pw == "" {
 		log.Fatal("'pw' environment variable not set")
 	}
@@ -87,10 +92,10 @@ func main() {
 		log.Fatal("'token' environment variable not set")
 	}
 
-	get_args()
+	get_args() // get command line paramters
 
 	config := &ssh.ClientConfig{
-		User: user,
+		User: *UserPtr,
 		Auth: []ssh.AuthMethod{
 			ssh.Password(pw),
 		},
@@ -101,28 +106,20 @@ func main() {
 		log.Fatal("Failed to dial: ", err)
 	}
 	defer client.Close()
-
-	commands := []string{
-		"file /usr/sbin/pvcreate",
-		"test -x /usr/sbin/pvs",
-		"test -x /usr/sbin/lvresize",
-		"test -x /usr/sbin/lvs",
-		"test -x /usr/bin/df",
-		"test -x /usr/bin/lsscsi",
-		"test -x /usr/bin/tail",
-	}
-	for _, s := range commands {
-		res, output := remote_exec(client, s)
-		if !res {
-			log.Fatal("Remote requirement not met!\n == Command: " + s + "\n == Output: \n" + output)
-		}
+	err = check_remote_commands(client)
+	if err != nil {
+		log.Fatal("Failed to check remote commands: ", err)
 	}
 
 	// check filesystem and get device+size for remote filesystem
-	// use "df -BG" to enforce consistent GB size format
-	res, output := remote_exec(client, "df -BG "+*FilesystemPtr+"| tail -1")
-	if !res {
-		log.Fatal("Remote 'df' command failed: " + output)
+	// use "df -BG" to enforce consistent size format
+	output, err := remote_exec(client, "/usr/bin/df -BG "+*FilesystemPtr+"| /usr/bin/tail -1")
+	if err != nil {
+		log.Fatal("Remote 'df' command failed: "+output, err)
+	}
+	err = check_remote_lvm(output)
+	if err != nil {
+		log.Fatal(err)
 	}
 	lvmdevice := strings.Fields(output)[0]
 	volgroup, volume := get_vg_and_lv(lvmdevice)
@@ -132,7 +129,7 @@ func main() {
 		log.Fatal("Could not convert to int: ", size)
 	}
 	mountpoint := strings.Fields(output)[5]
-	// check mountpoint equals filesystemclient
+	// check mountpoint equals filesystem
 	if mountpoint != *FilesystemPtr {
 		log.Fatal("Remote filesystem is not a mountpoint:\n == filesystem=" + *FilesystemPtr + "\n == mountpoint=" + mountpoint)
 	}
@@ -143,9 +140,6 @@ func main() {
 	}
 	fmt.Println("sizes: ", size, size_curr, size_needed)
 
-	serverid, err := get_server_id(*HostPtr, token)
-	fmt.Printf("The server id is %v\n", serverid)
-
 	// get PRE scsi devices
 	pre := strings.Fields(get_scsi_devices(client))
 	fmt.Println("pre: ", pre)
@@ -154,9 +148,8 @@ func main() {
 		fmt.Print("Dry-Run detected. Exiting before making changes to remote server")
 		os.Exit(0)
 	}
-	// add disk
-	fmt.Println("Adding new disk")
-	err = add_disk(serverid, size_needed, token)
+
+	err = ews_add_disk(*HostPtr, token, size_needed)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -169,14 +162,14 @@ func main() {
 	fmt.Println("newdevice: ", newdevice)
 
 	var a [4]string
-	a[0] = fmt.Sprintf("pvcreate %s", newdevice)
-	a[1] = fmt.Sprintf("vgextend %s %s", volgroup, newdevice)
-	a[2] = fmt.Sprintf("lvresize --size %dG --resizefs /dev/%s/%s", *SizePtr, volgroup, volume)
+	a[0] = fmt.Sprintf("/usr/sbin/pvcreate %s", newdevice)
+	a[1] = fmt.Sprintf("/usr/sbin/vgextend %s %s", volgroup, newdevice)
+	a[2] = fmt.Sprintf("/usr/sbin/lvresize --size %dG --resizefs /dev/%s/%s", *SizePtr, volgroup, volume)
 
 	for _, c := range a {
-		res, output = remote_exec(client, c)
-		if !res {
-			log.Fatal("Remote Command failed: ", output)
+		output, err = remote_exec(client, c)
+		if err != nil {
+			log.Fatal("Remote Command failed: "+output, err)
 		}
 	}
 }
