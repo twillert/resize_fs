@@ -3,10 +3,11 @@ resize remote filesystem
 
 # Todo
 
-* refactor curl -> http request
-* structure code better
-* write README
-* write tests
-* write AWS provider
-* refactor argument handling
+- [x] refactor curl -> http request
+- [x] structure code better
+- [ ] write README
+- [ ] write tests
+- [ ] write VMware provider
+- [ ] write AWS provider
+- [ ] refactor argument handling
 
